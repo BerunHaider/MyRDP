@@ -1,0 +1,57 @@
+name: RDP Opción B
+
+on:
+  workflow_dispatch:
+
+jobs:
+  secure-rdp:
+    runs-on: windows-latest
+    timeout-minutes: 360 # 6 horas máximo
+
+    steps:
+    # 1. Configuración básica de RDP (CORREGIDO)
+    - name: Configurar RDP y Firewall
+      run: |
+        Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name "fDenyTSConnections" -Value 0
+        Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -Name "UserAuthentication" -Value 0
+        # Se eliminó '-Force' que causaba el error
+        New-NetFirewallRule -DisplayName "RDP-In" -Direction Inbound -LocalPort 3389 -Protocol TCP -Action Allow
+
+    # 2. Conexión a Tailscale usando AUTH KEY
+    - name: Conectar a Tailscale
+      uses: tailscale/github-action@v2
+      with:
+        authkey: ${{ secrets.TAILSCALE_AUTH_KEY }}
+        tags: tag:ci
+        hostname: github-runner-${{ github.run_id }}
+
+    # 3. Crear Usuario y Generar Password
+    - name: Crear Usuario y Generar Password
+      run: |
+        $password = -join ((33..126) | Get-Random -Count 16 | % {[char]$_})
+        $securePass = ConvertTo-SecureString $password -AsPlainText -Force
+        
+        New-LocalUser -Name "RDPUser" -Password $securePass -Description "Usuario RDP"
+        Add-LocalGroupMember -Group "Administrators" -Member "RDPUser"
+        Add-LocalGroupMember -Group "Remote Desktop Users" -Member "RDPUser"
+        
+        echo "RDP_PASS=$password" >> $env:GITHUB_ENV
+
+    # 4. Mostrar Datos
+    - name: Datos de Acceso
+      run: |
+        $ip = (tailscale ip -4)
+        Write-Host "============================================="
+        Write-Host "   ✅ ACCESO RDP LISTO"
+        Write-Host "   🖥️  IP Tailscale: $ip"
+        Write-Host "   👤  Usuario:      RDPUser"
+        Write-Host "   🔑  Contraseña:   $env:RDP_PASS"
+        Write-Host "============================================="
+
+    # 5. Bucle Infinito
+    - name: Mantener Sesión Activa
+      run: |
+        Write-Host "La sesión durará hasta 6 horas o hasta que la canceles."
+        while ($true) {
+          Start-Sleep -Seconds 60
+        }
