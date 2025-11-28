@@ -1,0 +1,71 @@
+name: "⚡ Karpux Labs - Windows Server (Fixed)"
+
+on:
+  workflow_dispatch:
+
+jobs:
+  deploy-windows:
+    name: "🚀 Server: karpux-win-server"
+    runs-on: windows-latest
+    timeout-minutes: 360 # 6 Horas máximo
+
+    env:
+      # Tu clave de Tailscale (asegúrate de haber creado el Secret TAILSCALE_AUTHKEY)
+      TS_AUTHKEY: ${{ secrets.TAILSCALE_AUTHKEY }}
+      # TU CONTRASEÑA FIJA
+      STATIC_PASS: 'G2WP6j@n)q1{7%bE'
+      HOSTNAME: "karpux-win-server"
+
+    steps:
+      - name: 📌 Configuración Inicial
+        run: |
+          Write-Host "==============================================="
+          Write-Host "🔹 Iniciando Infraestructura Karpux Labs"
+          Write-Host "🔹 Hostname: $env:HOSTNAME"
+          Write-Host "==============================================="
+
+      - name: 🔐 Establecer Contraseña Fija
+        run: |
+          net user runneradmin $env:STATIC_PASS
+          Write-Host "✅ Contraseña establecida exitosamente: G2WP6j@n)q1{7%bE"
+
+      - name: 📥 Instalar Tailscale
+        run: |
+          Write-Host "⬇️ Descargando Tailscale..."
+          Invoke-WebRequest -Uri "https://pkgs.tailscale.com/stable/tailscale-setup-latest.exe" -OutFile "tailscale-setup.exe"
+          
+          Write-Host "⚙️ Instalando..."
+          Start-Process -FilePath "tailscale-setup.exe" -ArgumentList "/quiet", "/norestart" -Wait
+          Write-Host "✅ Tailscale instalado."
+
+      - name: 🔗 Conectar a Tailscale
+        run: |
+          # Agregamos Tailscale al PATH para poder usar el comando
+          $env:Path += ";C:\Program Files\Tailscale"
+          
+          Write-Host "🔌 Conectando a Karpux Labs VPN..."
+          
+          # CORRECCIÓN: Quitamos "--ssh" que causaba el error 500
+          # Usamos --unattended para que funcione como servicio en Windows
+          # Usamos --force-reauth para asegurar que tome la clave si se re-usa el nombre
+          tailscale up --authkey=$env:TS_AUTHKEY --hostname=$env:HOSTNAME --unattended --force-reauth
+          
+          # Esperamos 5 segundos para asegurar que la IP se asigne
+          Start-Sleep -Seconds 5
+          
+          $ts_ip = tailscale ip -4
+          
+          Write-Host "=========================================================="
+          Write-Host "🎉 SERVIDOR ONLINE"
+          Write-Host "💻 Nombre PC : $env:HOSTNAME"
+          Write-Host "🌐 IP Tailscale: $ts_ip"
+          Write-Host "👤 Usuario   : runneradmin"
+          Write-Host "🔑 Clave     : $env:STATIC_PASS"
+          Write-Host "=========================================================="
+
+      - name: 🔄 Mantener Vivo
+        run: |
+          Write-Host "⏳ Servidor activo. Esperando conexión..."
+          while ($true) {
+            Start-Sleep -Seconds 60
+          }
