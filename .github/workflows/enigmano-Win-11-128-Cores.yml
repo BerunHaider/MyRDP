@@ -1,0 +1,86 @@
+name: "⚡ EnigMano Win11 + 128 Cores Deployment"
+
+on:
+  workflow_dispatch:
+    inputs:
+      INSTANCE:
+        description: "Instance number to deploy (e.g., 1, 2, 3...)"
+        required: true
+        default: "1"
+
+jobs:
+  deploy-enigmano:
+    name: "🚀 Deploy EnigMano Instance ${{ github.event.inputs.INSTANCE }}"
+    runs-on: windows-11-arm
+
+    env:
+      INSTANCE_ID: ${{ github.event.inputs.INSTANCE }}
+      SECRET_SHAHZAIB: ${{ secrets.SECRET_SHAHZAIB }}
+      SECRET_GITHUB: ${{ secrets.SECRET_GITHUB }}
+      NGROK_SHAHZAIB: ${{ secrets.NGROK_SHAHZAIB }}
+      # TUNNEL_PROVIDER: set to 'ngrok', 'playit' or 'tailscale'
+      TUNNEL_PROVIDER: tailscale
+      # For tailscale, set this secret to your Tailscale auth key (tskey-...)
+      TAILSCALE_AUTHKEY: ${{ secrets.TAILSCALE_AUTHKEY }}
+      # Generic tunnel auth (for playit or other providers)
+      TUNNEL_AUTH: ${{ secrets.TUNNEL_AUTH }}
+      REPO: ${{ github.repository }}
+      WORKFLOW_FILE: "enigmano-Win-11-128-Cores.yml"
+      DEPLOYMENT_ID: ${{ github.run_id }}
+
+    steps:
+      - name: 📌 Deployment Parameters
+        shell: pwsh
+        run: |
+          $prevInstance = [int]$env:INSTANCE_ID - 1
+          Write-Host "==============================================="
+          Write-Host "🔹 EnigMano Instance     : $env:INSTANCE_ID"
+          Write-Host "🔢 Previous Instance     : $prevInstance"
+          Write-Host "📦 GitHub Repository     : $env:REPO"
+          Write-Host "🔁 Deployment Workflow   : $env:WORKFLOW_FILE"
+          Write-Host "🆔 Deployment ID         : $env:DEPLOYMENT_ID"
+          Write-Host "==============================================="
+
+      - name: 🔐 Validate Secrets
+        shell: pwsh
+        run: |
+          # Validate that a GitHub secret exists either as SECRET_GITHUB (preferred) or SECRET_SHAHZAIB (legacy)
+          if (-not ($env:SECRET_GITHUB -or $env:SECRET_SHAHZAIB)) {
+            Write-Error "❌ Missing GitHub Secret: set SECRET_GITHUB or SECRET_SHAHZAIB"
+            exit 1
+          }
+          if ($env:TUNNEL_PROVIDER -eq 'ngrok' -and -not $env:NGROK_SHAHZAIB) {
+            Write-Error "❌ Missing Ngrok Auth Token: NGROK_SHAHZAIB (required if TUNNEL_PROVIDER is ngrok)"
+            exit 1
+          }
+          if ($env:TUNNEL_PROVIDER -eq 'tailscale' -and -not $env:TAILSCALE_AUTHKEY) {
+            Write-Error "❌ Missing Tailscale Auth Key: TAILSCALE_AUTHKEY (required if TUNNEL_PROVIDER is tailscale)"
+            exit 1
+          }
+          Write-Host "✅ All required secrets validated successfully"
+
+      - name: 📥 Download EnigMano-instance.ps1
+        shell: pwsh
+        run: |
+          $url = "https://gitlab.com/Karpux/saong/-/raw/main/EnigMano-Instance.ps1"
+          Write-Host "🌐 Downloading EnigMano-Instance.ps1..."
+          Invoke-WebRequest -Uri $url -OutFile "EnigMano-Instance.ps1" -UseBasicParsing
+          if (!(Test-Path "./EnigMano-Instance.ps1")) {
+            Write-Error "❌ Failed to download EnigMano-Instance.ps1"
+            exit 1
+          }
+          Write-Host "✅ EnigMano-Instance.ps1 downloaded successfully"
+
+      - name: ⚔️ Execute EnigMano Instance Script
+        shell: pwsh
+        run: |
+          Write-Host "🚦 Initiating EnigMano-Instance.ps1"
+          powershell.exe -ExecutionPolicy Bypass -File ".\EnigMano-Instance.ps1"
+
+      - name: 💠 Final Status
+        if: always()
+        shell: pwsh
+        run: |
+          Write-Host "✅ EnigMano Instance $env:INSTANCE_ID completed execution."
+          Write-Host "🔋 Powered by: SHAHZAIB-YT"
+          Write-Host "🏁 EnigMano deployment executed with tactical precision."
