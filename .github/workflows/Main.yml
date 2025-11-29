@@ -1,0 +1,61 @@
+name: "⚡ Karpux Labs - Ultimate Server"
+
+on:
+  workflow_dispatch:
+
+jobs:
+  deploy-karpux-server:
+    name: "🚀 Server: karpux-win-server"
+    runs-on: windows-latest
+    timeout-minutes: 360
+
+    env:
+      TS_AUTHKEY: ${{ secrets.TAILSCALE_AUTHKEY }}
+      RCLONE_CONF_CONTENT: ${{ secrets.RCLONE_CONF }}
+      STATIC_PASS: 'G2WP6j@n)q1{7%bE'
+      HOSTNAME: "karpux-win-server"
+
+    steps:
+      - name: 📌 Info Karpux Labs
+        run: |
+          Write-Host "🔹 Iniciando Infraestructura..."
+          Write-Host "🔹 Hostname: $env:HOSTNAME"
+
+      - name: 🔐 Establecer Clave Fija
+        run: |
+          net user runneradmin $env:STATIC_PASS
+          Write-Host "✅ Contraseña establecida."
+
+      - name: 📥 Instalar Tailscale
+        run: |
+          Invoke-WebRequest -Uri "https://pkgs.tailscale.com/stable/tailscale-setup-latest.exe" -OutFile "ts.exe"
+          Start-Process -FilePath "ts.exe" -ArgumentList "/quiet", "/norestart" -Wait
+          Write-Host "✅ Tailscale instalado."
+
+      - name: 🔗 Conectar VPN
+        run: |
+          $env:Path += ";C:\Program Files\Tailscale"
+          tailscale up --authkey=$env:TS_AUTHKEY --hostname=$env:HOSTNAME --unattended --force-reauth
+          Start-Sleep -Seconds 5
+          Write-Host "✅ VPN Conectada."
+
+      - name: ☁️ Configurar Rclone
+        run: |
+          choco install rclone -y --no-progress
+          $configPath = "$env:USERPROFILE\.config\rclone"
+          New-Item -ItemType Directory -Force -Path $configPath
+          Set-Content -Path "$configPath\rclone.conf" -Value $env:RCLONE_CONF_CONTENT
+          Write-Host "✅ Configuración Drive inyectada."
+
+      - name: 💿 Montar Disco Z
+        run: |
+          Write-Host "🚀 Montando Google Drive..."
+          Start-Process rclone -ArgumentList "mount gdrive: Z: --vfs-cache-mode full --volname KarpuxDrive" -WindowStyle Hidden
+          Write-Host "✅ Disco Z montado en segundo plano."
+
+      - name: 🔄 Loop Servidor Activo
+        run: |
+          Write-Host "🎉 SERVIDOR ONLINE"
+          Write-Host "💻 Hostname: $env:HOSTNAME"
+          Write-Host "📂 Archivos en Unidad Z:"
+          while ($true) { Start-Sleep -Seconds 60 }
