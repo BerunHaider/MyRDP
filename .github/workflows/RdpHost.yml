@@ -1,0 +1,62 @@
+name: "⚡ Karpux Labs - Ultimate Server (Fixed)"
+
+on:
+  workflow_dispatch:
+
+jobs:
+  deploy-karpux-server:
+    name: "🚀 Server: karpux-win-server"
+    runs-on: windows-latest
+    timeout-minutes: 360
+
+    env:
+      TS_AUTHKEY: ${{ secrets.TAILSCALE_AUTHKEY }}
+      RCLONE_CONF_CONTENT: ${{ secrets.RCLONE_CONF }}
+      STATIC_PASS: 'G2WP6j@n)q1{7%bE'
+      HOSTNAME: "karpux-win-server"
+
+    steps:
+      - name: 📌 Info Karpux Labs
+        run: |
+          Write-Host "🔹 Iniciando Infraestructura..."
+          Write-Host "🔹 Hostname: $env:HOSTNAME"
+
+      - name: 🔐 Establecer Clave Fija
+        run: net user runneradmin $env:STATIC_PASS
+
+      - name: 📥 Instalar Tailscale
+        run: |
+          Invoke-WebRequest -Uri "https://pkgs.tailscale.com/stable/tailscale-setup-latest.exe" -OutFile "ts.exe"
+          Start-Process -FilePath "ts.exe" -ArgumentList "/quiet", "/norestart" -Wait
+
+      - name: 🔗 Conectar VPN
+        run: |
+          $env:Path += ";C:\Program Files\Tailscale"
+          tailscale up --authkey=$env:TS_AUTHKEY --hostname=$env:HOSTNAME --unattended --force-reauth
+          Start-Sleep -Seconds 5
+
+      # --- CORRECCIÓN AQUÍ: Instalamos WinFsp ---
+      - name: ☁️ Configurar Rclone + WinFsp
+        run: |
+          Write-Host "⬇️ Instalando Drivers..."
+          choco install rclone -y --no-progress
+          # ESTA ES LA CLAVE: Instalamos el driver de sistema de archivos
+          choco install winfsp -y --no-progress
+          
+          $configPath = "$env:USERPROFILE\.config\rclone"
+          New-Item -ItemType Directory -Force -Path $configPath
+          Set-Content -Path "$configPath\rclone.conf" -Value $env:RCLONE_CONF_CONTENT
+          Write-Host "✅ Drivers y Configuración listos."
+
+      - name: 💿 Montar Disco Z
+        run: |
+          Write-Host "🚀 Montando Google Drive..."
+          # Usamos --network-mode para asegurar que aparezca en Este Equipo
+          Start-Process rclone -ArgumentList "mount gdrive: Z: --vfs-cache-mode full --volname KarpuxDrive --network-mode" -WindowStyle Hidden
+          Write-Host "✅ Disco Z montado."
+
+      - name: 🔄 Loop Servidor Activo
+        run: |
+          Write-Host "🎉 SERVIDOR ONLINE"
+          Write-Host "📂 Revisa 'Este Equipo' > Ubicaciones de Red"
+          while ($true) { Start-Sleep -Seconds 60 }
