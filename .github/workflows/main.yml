@@ -22,50 +22,71 @@ jobs:
       NODE_OPTIONS: "--max_old_space_size=4096"
 
     steps:
-      # 1. Notificación de Inicio (Para que sepas que arrancó)
+      # 1. Notificación de Inicio
       - name: 🔔 Discord - Iniciando
         if: env.DISCORD_WEBHOOK != ''
         run: |
           $payload = @{ content = "🟡 **Karpux Labs** | Iniciando despliegue de infraestructura..." }
           Invoke-RestMethod -Uri $env:DISCORD_WEBHOOK -Method Post -Body ($payload | ConvertTo-Json) -ContentType 'application/json'
 
-      # 2. Configuración Básica de Red y Seguridad
+      # 2. Configuración de Usuario y Red
       - name: 🛠️ Preparar Sistema
         run: |
           Write-Host "🔹 Configurando Admin..."
-          net user runneradmin $env:STATIC_PASS /add 2>$null || net user runneradmin $env:STATIC_PASS
+          $user = "runneradmin"
+          $pass = $env:STATIC_PASS
           
+          # Método seguro para establecer contraseña
+          cmd /c "net user $user $pass /add"
+          if ($LASTEXITCODE -ne 0) { 
+            # Si falla (por ejemplo, usuario ya existe), intentamos cambiarla
+            cmd /c "net user $user $pass" 
+          }
+          
+          # Aseguramos permisos
+          net localgroup administrators $user /add 2>$null
+
           Write-Host "🔹 Abriendo Firewall..."
           Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -name "fDenyTSConnections" -value 0
           Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
 
-      # 3. Instalación Masiva de Herramientas (Optimizada)
+      # 3. Instalación Masiva de Herramientas
       - name: 📦 Instalar Herramientas (Core + DB + Utils)
         run: |
           Write-Host "⬇️ Instalando Pack de Ingeniería..."
-          # Instalamos todo en una sola línea para ahorrar tiempo
           choco install rclone winfsp mariadb cloudflared fastfetch vscode -y --no-progress --limit-output
 
-      # 4. Configuración de Base de Datos
+      # 4. Configuración de Base de Datos (CORREGIDO)
       - name: 🗄️ Configurar MySQL (MariaDB)
         run: |
           Write-Host "🚀 Iniciando Motor SQL..."
           $service = Get-Service -Name "MariaDB" -ErrorAction SilentlyContinue
           if ($service) { Start-Service "MariaDB" }
+          
+          # Esperamos a que el servicio arranque completamente
           Start-Sleep -Seconds 5
           
           Write-Host "⚙️ Creando DB 'karpux_db'..."
-          $mysqlParams = "-u root -e ""CREATE DATABASE IF NOT EXISTS karpux_db; ALTER USER 'root'@'localhost' IDENTIFIED BY 'root'; FLUSH PRIVILEGES;"""
           
-          try { & mysql $mysqlParams } 
-          catch { 
-              $mysqlPath = Get-ChildItem -Path "C:\Program Files\MariaDB*" -Filter "mysql.exe" -Recurse | Select-Object -First 1 -ExpandProperty FullName
-              & $mysqlPath $mysqlParams 
+          # Definimos la consulta y los argumentos como ARRAY para evitar errores de comillas
+          $sqlQuery = "CREATE DATABASE IF NOT EXISTS karpux_db; ALTER USER 'root'@'localhost' IDENTIFIED BY 'root'; FLUSH PRIVILEGES;"
+          $mysqlArgs = @("-u", "root", "-e", $sqlQuery)
+          
+          try {
+              # Intentamos usar el comando global
+              & mysql $mysqlArgs
           }
+          catch {
+              Write-Host "⚠️ Buscando ejecutable mysql.exe manualmente..."
+              $mysqlPath = Get-ChildItem -Path "C:\Program Files\MariaDB*" -Filter "mysql.exe" -Recurse | Select-Object -First 1 -ExpandProperty FullName
+              if (-not $mysqlPath) { throw "❌ No se encontró mysql.exe" }
+              & $mysqlPath $mysqlArgs
+          }
+          
           Write-Host "✅ DB Lista: user=root, pass=root"
 
-      # 5. Instalación de sampctl (Manual porque no siempre está en choco)
-      - name: 🎮 Instalar sampctl (SAMP)
+      # 5. Instalación de sampctl (SAMP)
+      - name: 🎮 Instalar sampctl
         run: |
           Invoke-WebRequest -Uri "https://github.com/Southclaws/sampctl/releases/download/1.11.0/sampctl_1.11.0_windows_amd64.zip" -OutFile "sampctl.zip"
           Expand-Archive -Path "sampctl.zip" -DestinationPath "C:\ProgramData\sampctl"
@@ -85,17 +106,16 @@ jobs:
           New-Item -ItemType Directory -Force -Path $configPath | Out-Null
           Set-Content -Path "$configPath\rclone.conf" -Value $env:RCLONE_CONF_CONTENT
           
-          # Montaje Optimizado
+          # Montaje
           Start-Process rclone -ArgumentList "mount gdrive: Z: --volname KarpuxDrive --network-mode --vfs-cache-mode full --vfs-cache-max-size 5G" -WindowStyle Hidden
           Write-Host "✅ Redes Conectadas."
 
-      # 7. Notificación Final y Branding
+      # 7. Notificación Final
       - name: 🔔 Discord - Servidor Listo
         if: env.DISCORD_WEBHOOK != ''
         run: |
-          # Obtenemos la IP de Tailscale
           $ip = & 'C:\Program Files\Tailscale\tailscale.exe' ip -4
-          $msg = "🚀 **Karpux Labs ONLINE** `n`n💻 **Host:** $env:HOSTNAME `n📡 **VPN IP:** $ip `n🗄️ **MySQL:** 3306 (root/root) `n`n⚠️ **IMPORTANTE:** Revisa los logs de GitHub para obtener el código de conexión de VS Code Tunnel."
+          $msg = "🚀 **Karpux Labs ONLINE** `n`n💻 **Host:** $env:HOSTNAME `n📡 **VPN IP:** $ip `n🗄️ **MySQL:** 3306 (root/root) `n`n⚠️ **ACCIÓN REQUERIDA:** Revisa los logs de GitHub para obtener el código de conexión de VS Code Tunnel."
           
           $payload = @{ content = $msg }
           Invoke-RestMethod -Uri $env:DISCORD_WEBHOOK -Method Post -Body ($payload | ConvertTo-Json) -ContentType 'application/json'
@@ -112,5 +132,5 @@ jobs:
           Write-Host "3. Entra a: https://vscode.dev/tunnel/$env:HOSTNAME"
           Write-Host "============================================="
           
-          # Iniciamos el túnel. Esto bloqueará el paso y mantendrá vivo el servidor.
+          # Iniciamos el túnel
           code tunnel --accept-server-license-terms --name $env:HOSTNAME
